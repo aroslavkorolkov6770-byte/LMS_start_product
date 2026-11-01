@@ -531,7 +531,7 @@ export default function AdminDashboard() {
       if (isSystemWorkspaceAccount(selectedProfileUser)) {
           return setErrorModal({ show: true, text: 'Профиль системного администратора изолирован от других администраторов.' });
       }
-      if (!editAuthLogin.trim() || !editAuthPass.trim()) return setErrorModal({ show: true, text: "Логин и пароль не могут быть пустыми!" });
+      if (!editAuthLogin.trim()) return setErrorModal({ show: true, text: "Логин не может быть пустым!" });
       if (users.find(u => u.login === editAuthLogin.trim() && u.id !== selectedProfileUser.id)) return setErrorModal({ show: true, text: "Логин занят другим пользователем!" });
       try {
           const response = await fetch('/api/admin/users/credentials', {
@@ -540,7 +540,7 @@ export default function AdminDashboard() {
               body: JSON.stringify({
                   userId: selectedProfileUser.id,
                   login: editAuthLogin.trim(),
-                  password: editAuthPass.trim(),
+                  password: editAuthPass.trim() || undefined,
               }),
           });
           const result = await response.json().catch(() => ({}));
@@ -551,6 +551,11 @@ export default function AdminDashboard() {
           const updatedUsers = users.map((user) => user.id === selectedProfileUser.id ? { ...user, ...result.user } : user);
           setUsers(updatedUsers);
           setSelectedProfileUser({ ...selectedProfileUser, ...result.user });
+          const currentUserId = localStorage.getItem('current_user_id') || sessionStorage.getItem('current_user_id');
+          if (currentUserId === result.user.id) {
+              applyClientAuthState(result.user);
+              window.dispatchEvent(new Event('storage'));
+          }
           setEditAuthMode(false);
           setEditAuthPass('');
           setShowSuccessModal({ show: true, title: 'ДОСТУПЫ ОБНОВЛЕНЫ', text: `Новые данные для входа успешно сохранены.` });

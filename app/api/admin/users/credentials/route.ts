@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { getLoginValidationError } from '@/app/lib/loginValidation';
 import {
     applySessionCookie,
     getStoredUsers,
@@ -34,16 +35,21 @@ export async function PUT(request: Request) {
         const login = typeof body.login === 'string' ? body.login.trim() : '';
         const password = typeof body.password === 'string' ? body.password : '';
 
-        if (!userId || !login || !password) {
-            return NextResponse.json({ error: 'Логин и пароль обязательны' }, { status: 400 });
+        const validationError = getLoginValidationError(login);
+        if (!userId || validationError) {
+            return NextResponse.json({ error: validationError || 'Укажите сотрудника' }, { status: 400 });
         }
 
-        if (login.length > 120 || password.length < 8 || password.length > 128) {
-            return NextResponse.json({ error: 'Логин должен быть короче 120 символов, пароль — от 8 до 128 символов' }, { status: 400 });
+        if ((body.password !== undefined && typeof body.password !== 'string') || (password && (password.length < 8 || password.length > 128))) {
+            return NextResponse.json({ error: 'Новый пароль должен содержать от 8 до 128 символов' }, { status: 400 });
         }
 
         const users = await getStoredUsers();
         const targetUser = users.find((user) => user.id === userId);
+
+        if (!targetUser) {
+            return NextResponse.json({ error: 'Пользователь не найден' }, { status: 404 });
+        }
 
         if (isHiddenSystemUser(targetUser) && session.id !== userId) {
             return NextResponse.json({ error: 'Доступ к системному аккаунту закрыт' }, { status: 403 });
@@ -53,28 +59,16 @@ export async function PUT(request: Request) {
             return NextResponse.json({ error: 'Логин уже занят другим пользователем' }, { status: 409 });
         }
 
-        let updatedUser = null;
-        const updatedUsers = users.map((user) => {
-            if (user.id !== userId) {
-                return user;
-            }
-
-            updatedUser = normalizeStoredPassword(
-                {
-                    ...user,
-                    login,
-                },
-                password,
-            );
-
-            return updatedUser;
-        });
-
-        if (!updatedUser) {
-            return NextResponse.json({ error: 'Пользователь не найден' }, { status: 404 });
+        // Без нового пароля сохраняем существующий хеш. Старый совместный сценарий логин+пароль остаётся доступным.
+        const loginChanged = targetUser.login !== login;
+        const updatedUser = password ? normalizeStoredPassword({ ...targetUser, login }, password) : {
+            ...targetUser,
+            login,
+            authVersion: (targetUser.authVersion || 0) + (loginChanged ? 1 : 0),
+        };
+        if (loginChanged || password) {
+            await saveStoredUsers(users.map((user) => user.id === userId ? updatedUser : user));
         }
-
-        await saveStoredUsers(updatedUsers);
 
         const response = NextResponse.json({
             success: true,

@@ -148,11 +148,16 @@ export default function UserProfileModal({
                                     {editAuthMode ? 'Сохранить' : 'Редактировать'}
                                 </button>
                             </div>
+                            {editAuthMode && editAuthLogin.trim() !== selectedProfileUser.login && (
+                                <p style={{ padding: '12px 14px', borderRadius: '12px', background: 'rgba(46, 125, 128, 0.08)', border: '1px solid var(--app-border)' }}>
+                                    Вы меняете логин сотрудника <strong>{selectedProfileUser.name}</strong>. Передайте ему новый логин: при следующем входе прежний перестанет работать. {editAuthPass.trim() ? 'Пароль также будет изменён.' : 'Пароль не изменится.'}
+                                </p>
+                            )}
                             <div className="vates-auth-grid">
                                 <label>
                                     <span>Логин доступа</span>
                                     {editAuthMode ? (
-                                        <input value={editAuthLogin} onChange={(event) => setEditAuthLogin(event.target.value)} />
+                                        <input maxLength={120} value={editAuthLogin} onChange={(event) => setEditAuthLogin(event.target.value)} />
                                     ) : (
                                         <strong>{selectedProfileUser.login}</strong>
                                     )}
@@ -160,7 +165,7 @@ export default function UserProfileModal({
                                 <label>
                                     <span>Новый пароль</span>
                                     {editAuthMode ? (
-                                        <input type="password" value={editAuthPass} onChange={(event) => setEditAuthPass(event.target.value)} placeholder="Введите новый пароль" />
+                                        <input type="password" value={editAuthPass} onChange={(event) => setEditAuthPass(event.target.value)} placeholder="Необязательно: новый пароль" />
                                     ) : (
                                         <strong className="is-muted">Скрыт</strong>
                                     )}

@@ -17,6 +17,11 @@ function ProfileContent() {
     const [isMounted, setIsMounted] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+    const [loginDraft, setLoginDraft] = useState('');
+    const [loginPassword, setLoginPassword] = useState('');
+    const [loginError, setLoginError] = useState('');
+    const [isSavingLogin, setIsSavingLogin] = useState(false);
     
     // Стейты для модального окна авторизации (Логин + Пароль)
     const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -183,6 +188,46 @@ function ProfileContent() {
         setIsNewPasswordVisible(false);
     };
 
+    const openLoginModal = () => {
+        setLoginDraft(userLogin);
+        setLoginPassword('');
+        setLoginError('');
+        setIsLoginModalOpen(true);
+    };
+
+    const closeLoginModal = () => {
+        if (isSavingLogin) return;
+        setIsLoginModalOpen(false);
+        setLoginPassword('');
+        setLoginError('');
+    };
+
+    const handleChangeLogin = async () => {
+        if (isSavingLogin) return;
+        setIsSavingLogin(true);
+        setLoginError('');
+        try {
+            const response = await fetch('/api/account/login', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ login: loginDraft.trim(), currentPassword: loginPassword }),
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || !result?.user) throw new Error(result?.error || 'Не удалось изменить логин');
+
+            // Обновляем и текущий экран, и браузерное состояние входа, сохраняя ID пользователя.
+            applyClientAuthState(result.user);
+            setUserLogin(result.user.login);
+            window.dispatchEvent(new Event('storage'));
+            setIsLoginModalOpen(false);
+            setLoginPassword('');
+        } catch (error) {
+            setLoginError(error instanceof Error ? error.message : 'Не удалось изменить логин');
+        } finally {
+            setIsSavingLogin(false);
+        }
+    };
+
     const handleLogout = () => {
         fetch('/api/auth/logout', { method: 'POST' })
             .catch((error) => console.error('Ошибка завершения сессии:', error))
@@ -296,6 +341,7 @@ function ProfileContent() {
                                 <p>{position} · {userLocation}</p>
                                 <div className="vates-profile-person-actions">
                                     <button type="button" className="vates-button secondary compact" onClick={() => setIsEditing(true)}>Редактировать профиль</button>
+                                    <button type="button" className="vates-button secondary compact" onClick={openLoginModal}>Сменить логин</button>
                                     <button type="button" className="vates-button primary compact" onClick={handleOpenAuthChange}>Сменить пароль</button>
                                     <button type="button" className="vates-button danger compact" onClick={handleLogout}>Выйти</button>
                                 </div>
@@ -435,6 +481,23 @@ function ProfileContent() {
                                 <label><span>Телефон</span><input value={profile.phone} onChange={(event) => setProfile({ ...profile, phone: event.target.value })} placeholder="Номер телефона" /></label>
                             </div>
                             <div className="vates-own-profile-dialog-actions"><button type="button" className="vates-button secondary" onClick={() => setIsEditing(false)}>Отмена</button><button type="button" className="vates-button primary" onClick={handleSaveProfile}>Сохранить изменения</button></div>
+                        </section>
+                    </div>
+                )}
+
+                {isLoginModalOpen && (
+                    <div className="vates-own-profile-overlay" onClick={closeLoginModal}>
+                        <section className="vates-own-profile-dialog vates-own-profile-password-dialog" role="dialog" aria-modal="true" aria-labelledby="own-profile-login-title" onClick={(event) => event.stopPropagation()}>
+                            <header><div><span className="vates-eyebrow">Учетная запись</span><h2 id="own-profile-login-title">Сменить логин</h2></div><button type="button" className="vates-icon-button" onClick={closeLoginModal} disabled={isSavingLogin} aria-label="Закрыть смену логина"><CustomIcon name="close" size={18} color="currentColor" /></button></header>
+                            <form onSubmit={(event) => { event.preventDefault(); void handleChangeLogin(); }}>
+                                <div className="vates-own-profile-form-grid">
+                                    <label htmlFor="own-profile-new-login"><span>Новый логин</span><input id="own-profile-new-login" autoComplete="username" maxLength={120} required value={loginDraft} onChange={(event) => setLoginDraft(event.target.value)} disabled={isSavingLogin} /></label>
+                                    <label htmlFor="own-profile-login-password"><span>Текущий пароль</span><input id="own-profile-login-password" type="password" autoComplete="current-password" required value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} disabled={isSavingLogin} /></label>
+                                </div>
+                                <p>После сохранения входите по новому логину. Пароль и учебный прогресс сохранятся.</p>
+                                {loginError && <p role="alert" style={{ color: 'var(--app-danger)' }}>{loginError}</p>}
+                                <div className="vates-own-profile-dialog-actions"><button type="button" className="vates-button secondary" onClick={closeLoginModal} disabled={isSavingLogin}>Отмена</button><button type="submit" className="vates-button primary" disabled={isSavingLogin}>{isSavingLogin ? 'Сохраняем...' : 'Сохранить логин'}</button></div>
+                            </form>
                         </section>
                     </div>
                 )}

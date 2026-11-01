@@ -4,6 +4,7 @@ import { adminIn, modalOverlay, modalContentSmall, saveBtn } from './adminStyles
 import CustomIcon from '@/app/components/CustomIcon';
 import { saveDataToServer } from '@/app/lib/storageClient';
 import { getVisibleWorkspaceUsers } from '@/app/lib/userVisibility';
+import { applyClientAuthState } from '@/app/lib/authClient';
 
 export default function UserManagement({
     users, setUsers, userAvatars, usersStats, totalRouteSteps, totalBasicsModules,
@@ -19,6 +20,10 @@ export default function UserManagement({
     const [passwordResetModal, setPasswordResetModal] = useState({ show: false, userId: '', userName: '' });
     const [temporaryPassword, setTemporaryPassword] = useState('');
     const [isResettingPassword, setIsResettingPassword] = useState(false);
+    const [loginChangeUser, setLoginChangeUser] = useState<{ id: string; name: string } | null>(null);
+    const [loginDraft, setLoginDraft] = useState('');
+    const [loginError, setLoginError] = useState('');
+    const [isSavingLogin, setIsSavingLogin] = useState(false);
     const visibleUsers = getVisibleWorkspaceUsers(Array.isArray(users) ? users : []);
 
     const getUserProgress = (user: any) => {
@@ -236,6 +241,46 @@ export default function UserManagement({
         }
     };
 
+    const openLoginChange = (user: { id: string; name: string; login: string }) => {
+        setLoginChangeUser({ id: user.id, name: user.name });
+        setLoginDraft(user.login || '');
+        setLoginError('');
+    };
+
+    const closeLoginChange = () => {
+        if (isSavingLogin) return;
+        setLoginChangeUser(null);
+        setLoginError('');
+    };
+
+    const saveLoginChange = async () => {
+        if (!loginChangeUser || isSavingLogin) return;
+        setIsSavingLogin(true);
+        setLoginError('');
+        try {
+            const response = await fetch('/api/admin/users/credentials', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: loginChangeUser.id, login: loginDraft.trim() }),
+            });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok || !result?.user) throw new Error(result?.error || 'Не удалось изменить логин');
+            setUsers(users.map((user: { id: string }) => user.id === result.user.id ? { ...user, ...result.user } : user));
+
+            const currentUserId = localStorage.getItem('current_user_id') || sessionStorage.getItem('current_user_id');
+            if (currentUserId === result.user.id) {
+                applyClientAuthState(result.user);
+                window.dispatchEvent(new Event('storage'));
+            }
+            setLoginChangeUser(null);
+            setShowSuccessModal({ show: true, title: 'ЛОГИН ОБНОВЛЁН', text: `Новый логин для ${loginChangeUser.name}: ${result.user.login}. Пароль сохранён.` });
+        } catch (error) {
+            setLoginError(error instanceof Error ? error.message : 'Не удалось изменить логин');
+        } finally {
+            setIsSavingLogin(false);
+        }
+    };
+
     return (
         <>
             <section className="vates-employees-section" aria-labelledby="vates-employees-title">
@@ -334,6 +379,9 @@ export default function UserManagement({
                                             <div className="vates-row-actions">
                                                 <button type="button" className="vates-button compact secondary" onClick={() => setSelectedProfileUser(u)}>Профиль</button>
                                                 {!u.systemAccount && !u.ghostAccount && (
+                                                    <button type="button" className="vates-button compact secondary" onClick={() => openLoginChange(u)} aria-label={`Сменить логин: ${u.name}`}>Логин</button>
+                                                )}
+                                                {!u.systemAccount && !u.ghostAccount && (
                                                     <button type="button" className="vates-icon-action" title="Сбросить пароль" onClick={() => openPasswordResetModal(u)}><CustomIcon name="refresh" size={17} color="currentColor" accent="none" /></button>
                                                 )}
                                                 {!isProtectedUser(u) && (
@@ -349,6 +397,20 @@ export default function UserManagement({
                     {filteredUsers.length === 0 && <div className="vates-table-empty">Сотрудники не найдены</div>}
                 </div>
             </section>
+
+            {loginChangeUser && (
+                <div className="vates-employee-modal-overlay" style={modalOverlay as React.CSSProperties} onClick={closeLoginChange}>
+                    <section className="vates-employee-create-modal" role="dialog" aria-modal="true" aria-labelledby="employee-login-title" onClick={(event) => event.stopPropagation()}>
+                        <div className="vates-employee-create-header"><span>Доступ сотрудника</span><h2 id="employee-login-title">Сменить логин</h2></div>
+                        <div className="vates-employee-location-panel"><p>Вы меняете логин сотрудника <strong>{loginChangeUser.name}</strong>. Передайте ему новый логин: при следующем входе прежний перестанет работать. Пароль не изменится.</p></div>
+                        <form onSubmit={(event) => { event.preventDefault(); void saveLoginChange(); }}>
+                            <label className="vates-employee-form-field" htmlFor="employee-new-login"><span>Новый логин</span><input id="employee-new-login" autoComplete="off" maxLength={120} required value={loginDraft} onChange={(event) => setLoginDraft(event.target.value)} disabled={isSavingLogin} /></label>
+                            {loginError && <p role="alert" style={{ color: 'var(--app-danger)' }}>{loginError}</p>}
+                            <div className="vates-employee-create-actions"><button type="button" className="vates-button secondary" onClick={closeLoginChange} disabled={isSavingLogin}>Отмена</button><button type="submit" className="vates-button primary" disabled={isSavingLogin}>{isSavingLogin ? 'Сохраняем...' : 'Сохранить логин'}</button></div>
+                        </form>
+                    </section>
+                </div>
+            )}
 
             {/* Модалки создания и удаления */}
             {showUserForm && (
